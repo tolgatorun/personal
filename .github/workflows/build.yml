@@ -96,9 +96,9 @@ jobs:
             fi
 
             docker run -d \
-              -p 80:${HOST_PORT} \ # Use the HOST_PORT variable here
+              -p 80:${HOST_PORT} \
               --name personal \
-              --restart always \ 
+              --restart always \
               ghcr.io/${{ github.repository }}:latest
 
             echo "Deployment successful!"
