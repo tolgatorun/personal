@@ -85,8 +85,8 @@ jobs:
             docker pull ghcr.io/${{ github.repository }}:latest
 
             echo "Stopping existing container (if any)..."
-            docker stop personal || true # Allow command to fail if container doesn't exist
-            docker rm personal || true # Allow command to fail if container doesn't exist
+            docker stop personal 
+            docker rm personal 
 
             echo "Starting new container..."
             HOST_PORT=${{ secrets.HOST_PORT }}
@@ -96,9 +96,8 @@ jobs:
             fi
 
             docker run -d \
-              -p 80:${HOST_PORT} \ # Use the HOST_PORT variable here
+              -p 80:${HOST_PORT} \
               --name personal \
-              --restart always \ # Optional: Add restart policy
               ghcr.io/${{ github.repository }}:latest
 
             echo "Deployment successful!"
