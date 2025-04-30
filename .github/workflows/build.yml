@@ -1,0 +1,109 @@
+name: Build and Deploy with Docker to EC2
+
+on:
+  push:
+    branches:
+      - main # Or your main branch name
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions: # Added permissions block
+      packages: write # Grant write permission to GHCR packages
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          build-args: |
+            VERSION=${{ github.run_number }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up SSH connection
+        run: |
+          echo "Setting up SSH key..."
+          mkdir -p ~/.ssh
+          if echo "${{ secrets.VPS_SSH_KEY }}" | grep -q "BEGIN OPENSSH PRIVATE KEY" || echo "${{ secrets.VPS_SSH_KEY }}" | grep -q "BEGIN RSA PRIVATE KEY"; then
+            echo "${{ secrets.VPS_SSH_KEY }}" | tr -d '\r' > ~/.ssh/pipeline
+          else
+            echo "Invalid SSH private key format" >&2
+            exit 1
+          fi
+          chmod 400 ~/.ssh/pipeline
+          
+          if [ -z "${{ secrets.KNOWN_HOSTS }}" ]; then
+            echo "KNOWN_HOSTS secret is empty" >&2
+            exit 1
+          fi
+
+          echo "${{ secrets.KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          echo "Testing SSH connection..."
+          if ! ssh -q -o StrictHostKeyChecking=yes -i ~/.ssh/pipeline ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} -p ${{ secrets.VPS_PORT }} "exit"; then
+            echo "SSH connection test failed" >&2
+            exit 1
+          fi
+
+          echo "Connecting to VPS instance..."
+          ssh -o StrictHostKeyChecking=yes -i ~/.ssh/pipeline ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} -p ${{ secrets.VPS_PORT }} << 'EOF2'
+            set -e
+            set -x
+
+            echo "Pulling latest image..."
+            docker pull ghcr.io/${{ github.repository }}:latest
+
+            echo "Stopping existing container (if any)..."
+            docker stop hello-world-container || true
+            docker rm hello-world-container || true
+
+            echo "Starting new container..."
+            HOST_PORT=${{ secrets.HOST_PORT }}
+            if [ -z "${HOST_PORT}" ]; then
+              echo "HOST_PORT secret is not set or empty!" >&2
+              exit 1
+            fi
+
+            docker run -d \
+              -p 80:${{ secrets.HOST_PORT }} \
+              --name hello-world-container \
+              ghcr.io/${{ github.repository }}:latest
+
+            echo "Deployment successful!"
+          EOF2
+          if [ $? -ne 0 ]; then
+            echo "SSH command failed" >&2
+            exit 1
+          fi
+
