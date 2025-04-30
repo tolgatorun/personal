@@ -85,8 +85,8 @@ jobs:
             docker pull ghcr.io/${{ github.repository }}:latest
 
             echo "Stopping existing container (if any)..."
-            docker stop hello-world-container || true
-            docker rm hello-world-container || true
+            docker stop personal 
+            docker rm personal 
 
             echo "Starting new container..."
             HOST_PORT=${{ secrets.HOST_PORT }}
@@ -97,7 +97,7 @@ jobs:
 
             docker run -d \
               -p 80:3000
-              --name hello-world-container \
+              --name personal \
               ghcr.io/${{ github.repository }}:latest
 
             echo "Deployment successful!"
